@@ -29,14 +29,17 @@ export function nightsOnDisk(runsDir: string): string[] {
   }
 }
 
-// Job rows grouped by final lastStatus; null when the night can't be read.
+// Job rows grouped by final lastStatus; null if the night disappears while reading.
 export function summarizeNight(runsDir: string, night: string): NightSummary {
   try {
     const counts = { ok: 0, retry: 0, fail: 0 };
     for (const row of readNight(runsDir, night).rows) counts[row.lastStatus] += 1;
     return { night, counts };
-  } catch {
-    return { night, counts: null };
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return { night, counts: null };
+    }
+    throw error;
   }
 }
 
