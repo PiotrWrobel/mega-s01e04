@@ -17,3 +17,5 @@ export type DigestNight = {
 };
 
 export type ReadNight = (runsDir: string, night: string) => DigestNight;
+
+export type DigestJson = DigestNight & { night: string };
