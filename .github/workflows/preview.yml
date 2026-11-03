@@ -1,0 +1,82 @@
+name: preview
+
+# Manual only: publishes one static copy of /digest/2026-10-28 under /preview/ (ADR 0003).
+on:
+  workflow_dispatch:
+    inputs:
+      include_marker:
+        description: 'Show the lane marker (LANE_MARKER secret) in the banner'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@10 --activate
+          pnpm install
+
+      - name: Save the digest as one HTML file
+        env:
+          PORT: '8787'
+          INCLUDE_MARKER: ${{ inputs.include_marker }}
+          LANE_MARKER_SECRET: ${{ secrets.LANE_MARKER }}
+        run: |
+          # The marker reaches rig only when asked for; otherwise it stays unset.
+          if [ "$INCLUDE_MARKER" = "true" ]; then
+            export LANE_MARKER="$LANE_MARKER_SECRET"
+          else
+            unset LANE_MARKER
+          fi
+          unset LANE_MARKER_SECRET INCLUDE_MARKER
+
+          out="$RUNNER_TEMP/site/preview"
+          mkdir -p "$out"
+          pnpm start > "$RUNNER_TEMP/rig.log" 2>&1 &
+          rig_pid=$!
+          trap 'kill "$rig_pid" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 30); do
+            curl -fsS -o /dev/null "http://localhost:$PORT/digest/2026-10-28" && break
+            sleep 1
+          done
+          curl -fsS "http://localhost:$PORT/digest/2026-10-28" -o "$out/index.html"
+
+          # ADR 0001: the page must be self-contained, no scripts, no external assets.
+          if grep -Eiq '<script|<link[^>]+href=|src="https?:' "$out/index.html"; then
+            echo "preview is not self-contained" >&2
+            exit 1
+          fi
+          grep -q 'no marker set' "$out/index.html" && echo "banner: no marker set" || echo "banner: marker shown"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
