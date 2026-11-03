@@ -32,7 +32,7 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@10 --activate
-          pnpm install
+          pnpm install --ignore-workspace --no-lockfile
 
       - name: Save the digest as one HTML file
         env:
