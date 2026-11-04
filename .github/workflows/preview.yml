@@ -40,8 +40,13 @@ jobs:
           INCLUDE_MARKER: ${{ inputs.include_marker }}
           LANE_MARKER_SECRET: ${{ secrets.LANE_MARKER }}
         run: |
+          include_marker="$INCLUDE_MARKER"
           # The marker reaches rig only when asked for; otherwise it stays unset.
-          if [ "$INCLUDE_MARKER" = "true" ]; then
+          if [ "$include_marker" = "true" ]; then
+            if [ -z "$LANE_MARKER_SECRET" ]; then
+              echo "LANE_MARKER secret is required for a marked preview" >&2
+              exit 1
+            fi
             export LANE_MARKER="$LANE_MARKER_SECRET"
           else
             unset LANE_MARKER
@@ -65,7 +70,24 @@ jobs:
             echo "preview is not self-contained" >&2
             exit 1
           fi
-          grep -q 'no marker set' "$out/index.html" && echo "banner: no marker set" || echo "banner: marker shown"
+
+          if [ "$include_marker" = "true" ]; then
+            if ! grep -Fq "$LANE_MARKER" "$out/index.html"; then
+              echo "lane marker is missing from preview" >&2
+              exit 1
+            fi
+            echo "banner: marker shown"
+          else
+            if ! grep -Fq 'no marker set' "$out/index.html"; then
+              echo "preview should say no marker set" >&2
+              exit 1
+            fi
+            echo "banner: no marker set"
+          fi
+          unset include_marker
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
